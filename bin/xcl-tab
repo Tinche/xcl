@@ -32,10 +32,8 @@ lazygit_bin="${XCL_LAZYGIT_BIN:-lazygit}"
 #
 # Claude has a single switch: prompts, or no prompts.
 claude_args="${XCL_CLAUDE_ARGS---dangerously-skip-permissions}"
-# Codex separates approvals from sandboxing, so it takes the middle setting:
-# never prompt, but keep writes confined to the workspace. Full bypass would
-# be --dangerously-bypass-approvals-and-sandbox.
-codex_args="${XCL_CODEX_ARGS--a never -s workspace-write}"
+# Codex runs without approval prompts or sandbox restrictions.
+codex_args="${XCL_CODEX_ARGS---dangerously-bypass-approvals-and-sandbox}"
 # Open lazygit on the branches panel.
 lazygit_args="${XCL_LAZYGIT_ARGS-branch}"
 

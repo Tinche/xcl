@@ -77,14 +77,15 @@ Set these before launching `xcl`; the tmux server inherits them.
 | variable | default | what |
 | --- | --- | --- |
 | `XCL_CLAUDE_ARGS` | `--dangerously-skip-permissions` | args for Claude tabs |
-| `XCL_CODEX_ARGS` | `-a never -s workspace-write` | args for Codex tabs |
+| `XCL_CODEX_ARGS` | `--dangerously-bypass-approvals-and-sandbox` | args for Codex tabs |
 | `XCL_LAZYGIT_ARGS` | `branch` | args for lazygit |
 | `XCL_EDITOR` | `zed` | what `prefix z` runs |
 | `XCL_CLAUDE_BIN` `XCL_CODEX_BIN` `XCL_LAZYGIT_BIN` | the tool's name | binary paths |
 | `XCL_SOCKET` | `xcl` | tmux socket name |
 | `XCL_CONF` | `~/.config/xcl/tmux.conf` | config path |
 
-The defaults assume a workspace you have already decided to trust. Set any
+The defaults assume a workspace you have already decided to trust. Codex
+runs without approval prompts or sandbox restrictions. Set any
 of the `_ARGS` variables to the empty string to get the tool's own defaults
 back, including its permission prompts.
 
