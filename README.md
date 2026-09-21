@@ -32,6 +32,11 @@ if Claude is not available) and attaches to it. The availability check respects
 `XCL_CLAUDE_BIN`. Run `xcl` again — from anywhere in the repo, including subdirectories —
 to come back to it. `xcl <dir>` targets another repo.
 
+Use `xcl -r` (or `xcl -r <dir>`) to start a new workspace with the agent's
+resume picker instead of a fresh conversation. This uses Claude when
+available, otherwise Codex. If the workspace already exists, xcl attaches
+to it as usual. `--resume` also works.
+
 ## Keys
 
 `prefix` is tmux's, `Ctrl+b` unless you change it.

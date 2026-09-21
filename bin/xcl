@@ -3,6 +3,7 @@
 #
 #   xcl              workspace for the repo containing $PWD
 #   xcl <dir>        workspace for the repo containing <dir>
+#   xcl -r [dir]    start a new workspace with the agent's resume picker
 #
 # One tmux session per repo root: each repo has its own independent set of
 # tabs. Running xcl from a subdirectory joins that repo's session rather
@@ -15,9 +16,17 @@ set -euo pipefail
 socket="${XCL_SOCKET:-xcl}"
 conf="${XCL_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/xcl/tmux.conf}"
 
-case "${1-}" in
-  -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-esac
+resume=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -r|--resume) resume=1; shift ;;
+    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --) shift; break ;;
+    -*) echo "xcl: unknown option: $1" >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+[ "$#" -le 1 ] || { echo "usage: xcl [-r|--resume] [dir]" >&2; exit 2; }
 
 [ -f "$conf" ] || { echo "xcl: missing config: $conf" >&2; exit 1; }
 command -v tmux >/dev/null 2>&1 || { echo "xcl: tmux is not installed" >&2; exit 1; }
@@ -69,6 +78,9 @@ if ! tm has-session -t "=$name" 2>/dev/null; then
   agent=claude
   if ! command -v "${XCL_CLAUDE_BIN:-claude}" >/dev/null 2>&1; then
     agent=codex
+  fi
+  if [ "$resume" = 1 ]; then
+    agent="$agent-resume"
   fi
   # new-session's own window would be a bare shell, so let xcl-tab build the
   # first tab (it does the labelling) and drop the placeholder afterwards.
