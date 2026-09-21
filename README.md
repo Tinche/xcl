@@ -27,8 +27,9 @@ cd ~/code/my-repo
 xcl
 ```
 
-That creates the workspace for `my-repo` with one Claude tab and attaches to
-it. Run `xcl` again — from anywhere in the repo, including subdirectories —
+That creates the workspace for `my-repo` with one Claude tab (or tries Codex
+if Claude is not available) and attaches to it. The availability check respects
+`XCL_CLAUDE_BIN`. Run `xcl` again — from anywhere in the repo, including subdirectories —
 to come back to it. `xcl <dir>` targets another repo.
 
 ## Keys

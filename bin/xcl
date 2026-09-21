@@ -66,6 +66,10 @@ if tm has-session -t "=$name" 2>/dev/null; then
 fi
 
 if ! tm has-session -t "=$name" 2>/dev/null; then
+  agent=claude
+  if ! command -v "${XCL_CLAUDE_BIN:-claude}" >/dev/null 2>&1; then
+    agent=codex
+  fi
   # new-session's own window would be a bare shell, so let xcl-tab build the
   # first tab (it does the labelling) and drop the placeholder afterwards.
   tm new-session -d -s "$name" -n __bootstrap -c "$root" "sleep 86400"
@@ -75,7 +79,7 @@ if ! tm has-session -t "=$name" 2>/dev/null; then
   # Pin the shell rather than leaving tmux to guess from the server's
   # environment, so shell tabs match the shell xcl was launched from.
   tm set-option -g default-shell "${SHELL:-/bin/sh}"
-  XCL_SOCKET="$socket" xcl-tab claude "$dir" "$name"
+  XCL_SOCKET="$socket" xcl-tab "$agent" "$dir" "$name"
   tm kill-window -t "=$name:__bootstrap"
 fi
 
