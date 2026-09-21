@@ -104,16 +104,31 @@ case "$agent" in
   # --resume goes LAST: its value is optional, so a flag placed after it
   # could be mistaken for a session id.
   claude-resume) cmd="exec $claude_bin $claude_args --resume" ;;
-  codex)         cmd="exec $codex_bin $codex_args" ;;
+  codex)         cmd="exec $codex_bin $codex_args -c 'tui.terminal_title=[\"thread\"]' -c tui.animations=false" ;;
   # Likewise Codex's own cwd-filtered picker.
   # Options go after the subcommand: codex resume [OPTIONS] [SESSION_ID]
-  codex-resume)  cmd="exec $codex_bin resume $codex_args" ;;
+  codex-resume)  cmd="exec $codex_bin resume $codex_args -c 'tui.terminal_title=[\"thread\"]' -c tui.animations=false" ;;
   lazygit)       cmd="exec $lazygit_bin $lazygit_args" ;;
   shell)         cmd="" ;;
 esac
 
 # Spelled out rather than `exec tm ...` — tm is a shell function and exec
 # needs a real binary.
+if [[ "$agent" = codex || "$agent" = codex-resume ]]; then
+  # Commands in this queue target the newly created window. Clear tmux's
+  # initial hostname title before processing the tool's terminal output.
+  # Codex publishes its conversation title via OSC; tmux tracks it as
+  # pane_title. Codex may publish a thread UUID before it has a title;
+  # keep the original label while the title is empty or a bare UUID.
+  # Store the regex separately so its braces aren't parsed as formats.
+  exec tmux -L "$socket" new-window -t "=$session:" -c "$dir" -n "$label" "$cmd" \; \
+    select-pane -T '' \; \
+    set-option -w @xcl_label "$label" \; \
+    set-option -w @xcl_uuid_pattern '^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$' \; \
+    set-option -w automatic-rename-format '#{?pane_title,#{?#{m/r:#{@xcl_uuid_pattern},#{pane_title}},#{@xcl_label},#{=/40/…:pane_title}},#{@xcl_label}}' \; \
+    set-option -w automatic-rename on
+fi
+
 if [ -n "$cmd" ]; then
   exec tmux -L "$socket" new-window -t "=$session:" -c "$dir" -n "$label" "$cmd"
 else

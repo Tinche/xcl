@@ -55,6 +55,13 @@ Tabs are named after what they run: `claude`, `claude 2`, `claude↻` for a
 resumed one, `cx` for Codex, `sh`, `git`. A tab opened outside the repo root
 is tagged with its subdirectory, like `claude:staging`.
 
+Codex tabs keep that label while the title is empty or a session UUID, then
+follow the conversation title when Codex publishes it. Long titles are
+shortened to 40 characters plus an ellipsis. This also applies to resumed
+Codex conversations and requires a
+Codex version that supports `tui.terminal_title`.
+Codex terminal animations are disabled in xcl to reduce flickering in tmux.
+
 The `Alt` keys need your terminal to send Option/Alt as Alt. In Ghostty on
 macOS that is `macos-option-as-alt = true`. The `prefix` binds always work.
 
