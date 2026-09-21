@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# xcl — start (or return to) this repo's tabbed agent workspace.
+#
+#   xcl              workspace for the repo containing $PWD
+#   xcl <dir>        workspace for the repo containing <dir>
+#
+# One tmux session per repo root: each repo has its own independent set of
+# tabs. Running xcl from a subdirectory joins that repo's session rather
+# than starting a new one.
+#
+# Inside: prefix-c Claude, prefix-r resume, prefix-C Codex, prefix-R resume,
+# prefix-S shell, prefix-g lazygit, prefix-z editor, prefix-s switch repo.
+set -euo pipefail
+
+socket="${XCL_SOCKET:-xcl}"
+conf="${XCL_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/xcl/tmux.conf}"
+
+case "${1-}" in
+  -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+[ -f "$conf" ] || { echo "xcl: missing config: $conf" >&2; exit 1; }
+command -v tmux >/dev/null 2>&1 || { echo "xcl: tmux is not installed" >&2; exit 1; }
+# The keybinds call xcl-tab by name, so it must be on PATH — otherwise
+# every tab-opening key would silently do nothing.
+command -v xcl-tab >/dev/null 2>&1 || {
+  echo "xcl: xcl-tab not found on PATH (install dir not in PATH?)" >&2; exit 1; }
+
+dir="${1:-$PWD}"
+[ -d "$dir" ] || { echo "xcl: not a directory: $dir" >&2; exit 1; }
+dir="$(cd "$dir" && pwd)"
+
+# The session is keyed on the repo root, so any subdirectory of a repo
+# resolves to the same workspace. Outside a repo, the directory is its own root.
+root="$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null || true)"
+root="${root:-$dir}"
+
+tm() { tmux -L "$socket" -f "$conf" "$@"; }
+
+# Linux ships sha256sum, macOS ships shasum. Fall back to cksum, which is in
+# POSIX; this only has to be stable per path, not cryptographic.
+short_hash() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf %s "$1" | sha256sum | cut -c1-6
+  elif command -v shasum >/dev/null 2>&1; then
+    printf %s "$1" | shasum -a 256 | cut -c1-6
+  else
+    printf %s "$1" | cksum | tr -dc '0-9' | cut -c1-6
+  fi
+}
+
+# tmux session names may not contain "." or ":".
+name="$(basename "$root" | tr '.:' '__')"
+
+# Two repos can share a basename (~/a/infra and ~/b/infra). Each session
+# records its root in @xcl_root; on a mismatch, disambiguate with a short
+# hash of the path, which is unique per root by construction.
+# Note the trailing ":" on option targets — set-option/show-options take a
+# PANE target, so "=name" alone is unresolvable; "=name:" means that
+# session's current window, which is enough for tmux to infer the session.
+if tm has-session -t "=$name" 2>/dev/null; then
+  existing="$(tm show-options -t "=$name:" -qv @xcl_root || true)"
+  if [ "$existing" != "$root" ]; then
+    name="$name-$(short_hash "$root")"
+  fi
+fi
+
+if ! tm has-session -t "=$name" 2>/dev/null; then
+  # new-session's own window would be a bare shell, so let xcl-tab build the
+  # first tab (it does the labelling) and drop the placeholder afterwards.
+  tm new-session -d -s "$name" -n __bootstrap -c "$root" "sleep 86400"
+  tm set-option -t "=$name:" @xcl_root "$root"
+  # Recorded so the prefix-M-r reload bind can find this file again.
+  tm set-option -g @xcl_conf "$conf"
+  # Pin the shell rather than leaving tmux to guess from the server's
+  # environment, so shell tabs match the shell xcl was launched from.
+  tm set-option -g default-shell "${SHELL:-/bin/sh}"
+  XCL_SOCKET="$socket" xcl-tab claude "$dir" "$name"
+  tm kill-window -t "=$name:__bootstrap"
+fi
+
+if [ -n "${TMUX-}" ]; then
+  # Inside tmux already. If it's this server, hop to the target session;
+  # otherwise refuse rather than nest an attach.
+  if [ "$(basename "${TMUX%%,*}")" = "$socket" ]; then
+    exec tmux -L "$socket" switch-client -t "=$name"
+  fi
+  echo "xcl: already inside another tmux; session '$name' is ready to attach." >&2
+  exit 0
+fi
+
+# Not `exec tm ...` — tm is a shell function and exec needs a real binary.
+exec tmux -L "$socket" -f "$conf" attach-session -t "=$name"

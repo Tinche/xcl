@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# xcl-tab — open one new tab in a repo's xcl session.
+#
+#   xcl-tab [claude|claude-resume|codex|codex-resume|shell|lazygit] [dir] [session]
+#
+# Called by the keybinds in xcl's tmux.conf, and by xcl itself.
+#
+# The session already identifies the repo, so tabs are labelled by what they
+# run rather than by repo: claude, claude 2, cx, sh. A tab opened somewhere
+# other than the repo root carries that subdirectory: claude:staging.
+#
+# claude-resume and codex-resume open each agent's own built-in session picker
+# inside the tab, so nothing here has to list sessions. Those tabs are
+# labelled claude↻ / cx↻ to distinguish them from fresh ones.
+#
+# lazygit is a singleton: one per repo, always at the repo root. Asking for
+# it again switches to the existing tab instead of opening a second one.
+set -euo pipefail
+
+agent="${1:-claude}"
+dir="${2:-$PWD}"
+session="${3:-}"
+resume_mark="${XCL_RESUME_MARK-↻}"
+
+socket="${XCL_SOCKET:-xcl}"
+claude_bin="${XCL_CLAUDE_BIN:-claude}"
+codex_bin="${XCL_CODEX_BIN:-codex}"
+lazygit_bin="${XCL_LAZYGIT_BIN:-lazygit}"
+
+# Defaults assume an agent workspace you have already decided to trust.
+# Every one of these is overridable; set to "" for the tool's own defaults.
+#
+# Claude has a single switch: prompts, or no prompts.
+claude_args="${XCL_CLAUDE_ARGS---dangerously-skip-permissions}"
+# Codex separates approvals from sandboxing, so it takes the middle setting:
+# never prompt, but keep writes confined to the workspace. Full bypass would
+# be --dangerously-bypass-approvals-and-sandbox.
+codex_args="${XCL_CODEX_ARGS--a never -s workspace-write}"
+# Open lazygit on the branches panel.
+lazygit_args="${XCL_LAZYGIT_ARGS-branch}"
+
+[ -d "$dir" ] || { echo "xcl-tab: not a directory: $dir" >&2; exit 1; }
+dir="$(cd "$dir" && pwd)"
+
+tm() { tmux -L "$socket" "$@"; }
+
+# Without an explicit session, use the one the calling client is in.
+if [ -z "$session" ]; then
+  session="$(tm display-message -p '#{session_name}' 2>/dev/null || true)"
+  [ -n "$session" ] || { echo "xcl-tab: no session given and none current" >&2; exit 1; }
+fi
+
+singleton=0
+case "$agent" in
+  claude)        base="claude" ;;
+  claude-resume) base="claude$resume_mark" ;;
+  codex)         base="cx"     ;;
+  codex-resume)  base="cx$resume_mark" ;;
+  shell)         base="sh"     ;;
+  lazygit)       base="git"; singleton=1 ;;
+  *) echo "xcl-tab: unknown agent '$agent'" \
+          "(claude|claude-resume|codex|codex-resume|shell|lazygit)" >&2; exit 2 ;;
+esac
+
+# Trailing ":" — show-options takes a PANE target, so "=name" alone is
+# unresolvable; "=name:" resolves via that session's current window.
+root="$(tm show-options -t "=$session:" -qv @xcl_root || true)"
+
+if [ "$singleton" = 1 ]; then
+  # Already open? Switch to it. Matched by index rather than by name so
+  # labels containing spaces can't break the target.
+  idx="$(tm list-windows -t "=$session" -F '#{window_index}' \
+           -f "#{==:#{window_name},$base}" 2>/dev/null | head -1)"
+  if [ -n "$idx" ]; then
+    exec tmux -L "$socket" select-window -t "=$session:$idx"
+  fi
+  # It operates on the whole repo, so open it at the root regardless of
+  # which tab it was launched from, and never subdirectory-tag it.
+  dir="${root:-$dir}"
+  label="$base"
+else
+  # Tag the tab with its subdirectory when it isn't the repo root.
+  if [ -n "$root" ] && [ "$dir" != "$root" ]; then
+    base="$base:$(basename "$dir")"
+  fi
+  # Distinguish repeats: claude, claude 2, claude 3, ...
+  label="$base"
+  if existing="$(tm list-windows -t "=$session" -F '#{window_name}' 2>/dev/null)"; then
+    n=1
+    while printf '%s\n' "$existing" | grep -qxF "$label"; do
+      n=$((n + 1))
+      label="$base $n"
+    done
+  fi
+fi
+
+# `exec` so the launching shell replaces itself with the tool: one less
+# process per tab, the pane reports the tool as its command, and the tab
+# closes when it exits. The shell tab passes no command at all, so tmux
+# starts the default shell directly.
+case "$agent" in
+  claude)        cmd="exec $claude_bin $claude_args" ;;
+  # Claude's own picker, inside the tab — no session listing needed here.
+  # --resume goes LAST: its value is optional, so a flag placed after it
+  # could be mistaken for a session id.
+  claude-resume) cmd="exec $claude_bin $claude_args --resume" ;;
+  codex)         cmd="exec $codex_bin $codex_args" ;;
+  # Likewise Codex's own cwd-filtered picker.
+  # Options go after the subcommand: codex resume [OPTIONS] [SESSION_ID]
+  codex-resume)  cmd="exec $codex_bin resume $codex_args" ;;
+  lazygit)       cmd="exec $lazygit_bin $lazygit_args" ;;
+  shell)         cmd="" ;;
+esac
+
+# Spelled out rather than `exec tm ...` — tm is a shell function and exec
+# needs a real binary.
+if [ -n "$cmd" ]; then
+  exec tmux -L "$socket" new-window -t "=$session:" -c "$dir" -n "$label" "$cmd"
+else
+  exec tmux -L "$socket" new-window -t "=$session:" -c "$dir" -n "$label"
+fi

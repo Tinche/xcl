@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# xcl-open — open a directory in an editor (bound to prefix-z).
+#
+#   xcl-open [dir]
+#
+# Exists so the keybind contains no shell-variable syntax: tmux expands
+# ${...} in config strings itself and rejects the ${VAR:-default} form,
+# which silently kills the whole config file. Editor choice lives here.
+#
+# XCL_EDITOR wins; it may include arguments. Otherwise the first of zed,
+# zeditor (Zed's name on some Linux distros), $VISUAL or $EDITOR that
+# exists is used.
+set -euo pipefail
+
+dir="${1:-$PWD}"
+[ -d "$dir" ] || { echo "xcl-open: not a directory: $dir" >&2; exit 1; }
+
+if [ -n "${XCL_EDITOR:-}" ]; then
+  # Deliberately unquoted: XCL_EDITOR may carry arguments.
+  # shellcheck disable=SC2086
+  exec $XCL_EDITOR "$dir"
+fi
+
+for candidate in zed zeditor "${VISUAL:-}" "${EDITOR:-}"; do
+  [ -n "$candidate" ] || continue
+  # shellcheck disable=SC2086
+  set -- $candidate
+  if command -v "$1" >/dev/null 2>&1; then
+    exec "$@" "$dir"
+  fi
+done
+
+echo "xcl-open: no editor found; set XCL_EDITOR, VISUAL or EDITOR" >&2
+exit 1
