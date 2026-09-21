@@ -100,6 +100,23 @@ On Linux, Zed's binary is sometimes `zeditor`: set `XCL_EDITOR=zeditor`.
 If tmux complains about missing `tmux-256color` terminfo, install
 `ncurses-term` or change `default-terminal` in the config.
 
+## Tests
+
+Run the suite with Python 3.9 or newer; no Python packages are required:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+The script tests use isolated temporary directories and mocked tools to
+cover startup, agent fallback, resume mode, tab commands and labels, and
+editor selection. They never launch real agents or require credentials.
+A tmux integration test checks conversation title updates, UUID fallback,
+and truncation on a separate server; it is skipped if tmux is not installed.
+
+GitHub Actions runs the full suite, including the tmux test and shell syntax
+checks, on pushes to `main` and on pull requests.
+
 ## Uninstall
 
 ```sh
