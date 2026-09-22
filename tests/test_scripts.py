@@ -164,6 +164,32 @@ class ScriptTests(unittest.TestCase):
                                  '-c', 'tui.terminal_title=["thread"]', '-c', 'tui.animations=false']
                 self.assertEqual(argv, expected)
 
+    def test_agent_tabs_track_titles_and_other_tabs_do_not(self):
+        placeholders = {
+            'claude': '^(✳ |◐ |◑ )?(Claude Code|claude · resume)$',
+            'codex': '^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$',
+        }
+        for agent in ('claude', 'claude-resume', 'codex', 'codex-resume'):
+            with self.subTest(agent=agent):
+                self.run_script('xcl-tab', agent, self.project, 'workspace')
+                call = self.tm_calls('new-window')[0]
+                # One tmux invocation: new-window, then the window options,
+                # separated by ';' so they target the new window.
+                label = call[call.index('-n') + 1]
+                self.assertEqual(call[call.index('@xcl_label') + 1], label)
+                self.assertEqual(call[call.index('@xcl_placeholder') + 1],
+                                 placeholders[agent.split('-')[0]])
+                self.assertEqual(call[call.index('automatic-rename') + 1], 'on')
+                fmt = call[call.index('automatic-rename-format') + 1]
+                self.assertIn('@xcl_placeholder', fmt)
+                self.assertIn('@xcl_label', fmt)
+        for agent in ('shell', 'lazygit'):
+            with self.subTest(agent=agent):
+                self.run_script('xcl-tab', agent, self.project, 'workspace')
+                call = self.tm_calls('new-window')[0]
+                self.assertNotIn('automatic-rename', call)
+                self.assertNotIn(';', call)
+
     def test_empty_args_override_and_custom_binary(self):
         self.run_script('xcl-tab', 'codex', self.project, 'workspace',
                         XCL_CODEX_BIN='custom-codex', XCL_CODEX_ARGS='')
