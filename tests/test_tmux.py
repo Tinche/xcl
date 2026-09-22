@@ -16,7 +16,8 @@ class TmuxTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='xcl-tmux-')
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        # Resolved, as in test_scripts: the scripts report physical paths.
+        self.root = Path(self.tmp.name).resolve()
         self.socket = self.root.name
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith('XCL_') and key not in ('TMUX', 'TMUX_TMPDIR')}
