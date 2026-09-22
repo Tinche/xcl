@@ -13,6 +13,9 @@
 # inside the tab, so nothing here has to list sessions. Those tabs are
 # labelled claude↻ / cx↻ to distinguish them from fresh ones.
 #
+# Agent tabs follow the conversation title once the agent publishes one; see
+# the title tracking below.
+#
 # lazygit is a singleton: one per repo, always at the repo root. Asking for
 # it again switches to the existing tab instead of opening a second one.
 set -euo pipefail
@@ -110,20 +113,36 @@ case "$agent" in
   shell)         cmd="" ;;
 esac
 
+# Both agents publish their conversation title via OSC; tmux tracks it as
+# pane_title. Each also publishes a placeholder before it has a real title,
+# and the tab keeps its label while the title is empty or matches it:
+#   Codex   a bare thread UUID.
+#   Claude  "Claude Code" (or "claude · resume" on its picker), behind the
+#           glyph it prefixes every title with: ✳, or ◐/◑ when its spinner
+#           is on. The glyph is stripped from the tab name. Claude does this
+#           by default; CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1 turns it off,
+#           in which case the tab simply keeps its label.
+# Codex titles carry no glyph, so one format serves both.
+case "$agent" in
+  codex|codex-resume)
+    placeholder='^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$' ;;
+  claude|claude-resume)
+    placeholder='^(✳ |◐ |◑ )?(Claude Code|claude · resume)$' ;;
+  *)
+    placeholder="" ;;
+esac
+
 # Spelled out rather than `exec tm ...` — tm is a shell function and exec
 # needs a real binary.
-if [[ "$agent" = codex || "$agent" = codex-resume ]]; then
+if [ -n "$placeholder" ]; then
   # Commands in this queue target the newly created window. Clear tmux's
   # initial hostname title before processing the tool's terminal output.
-  # Codex publishes its conversation title via OSC; tmux tracks it as
-  # pane_title. Codex may publish a thread UUID before it has a title;
-  # keep the original label while the title is empty or a bare UUID.
   # Store the regex separately so its braces aren't parsed as formats.
   exec tmux -L "$socket" new-window -t "=$session:" -c "$dir" -n "$label" "$cmd" \; \
     select-pane -T '' \; \
     set-option -w @xcl_label "$label" \; \
-    set-option -w @xcl_uuid_pattern '^[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$' \; \
-    set-option -w automatic-rename-format '#{?pane_title,#{?#{m/r:#{@xcl_uuid_pattern},#{pane_title}},#{@xcl_label},#{=/40/…:pane_title}},#{@xcl_label}}' \; \
+    set-option -w @xcl_placeholder "$placeholder" \; \
+    set-option -w automatic-rename-format '#{?pane_title,#{?#{m/r:#{@xcl_placeholder},#{pane_title}},#{@xcl_label},#{s/^(✳ |◐ |◑ )//;=/40/…:pane_title}},#{@xcl_label}}' \; \
     set-option -w automatic-rename on
 fi
 

@@ -60,12 +60,18 @@ Tabs are named after what they run: `claude`, `claude 2`, `claude↻` for a
 resumed one, `cx` for Codex, `sh`, `git`. A tab opened outside the repo root
 is tagged with its subdirectory, like `claude:staging`.
 
-Codex tabs keep that label while the title is empty or a session UUID, then
-follow the conversation title when Codex publishes it. Long titles are
-shortened to 40 characters plus an ellipsis. This also applies to resumed
-Codex conversations and requires a
-Codex version that supports `tui.terminal_title`.
-Codex terminal animations are disabled in xcl to reduce flickering in tmux.
+Agent tabs keep that label until the conversation has a title, then follow
+it. Long titles are shortened to 40 characters plus an ellipsis. This also
+applies to resumed conversations, once one is picked.
+
+Claude Code publishes its title by default: the name given with `/rename` or
+`--name`, otherwise a generated summary. xcl strips the `✳` glyph Claude puts
+in front of it. Set `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to keep the plain
+labels instead.
+
+Codex tabs keep the label while the title is empty or a session UUID. This
+requires a Codex version that supports `tui.terminal_title`. Codex terminal
+animations are disabled in xcl to reduce flickering in tmux.
 
 The `Alt` keys need your terminal to send Option/Alt as Alt. In Ghostty on
 macOS that is `macos-option-as-alt = true`. The `prefix` binds always work.
