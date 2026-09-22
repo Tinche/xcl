@@ -121,7 +121,7 @@ A tmux integration test checks conversation title updates, UUID fallback,
 and truncation on a separate server; it is skipped if tmux is not installed.
 
 GitHub Actions runs the full suite, including the tmux test and shell syntax
-checks, on pushes to `main` and on pull requests.
+checks, on Linux and macOS, on pushes to `main` and on pull requests.
 
 ## Uninstall
 

@@ -10,15 +10,23 @@ permissions:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Install tmux
+      - name: Install tmux (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Install tmux (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux
       - name: Check shell syntax
         run: |
           bash -n bin/xcl bin/xcl-tab bin/xcl-open
