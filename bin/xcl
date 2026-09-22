@@ -37,7 +37,9 @@ command -v xcl-tab >/dev/null 2>&1 || {
 
 dir="${1:-$PWD}"
 [ -d "$dir" ] || { echo "xcl: not a directory: $dir" >&2; exit 1; }
-dir="$(cd "$dir" && pwd)"
+# Physical path (-P): git and tmux report physical paths, and this is
+# compared against both. Matters on macOS, where /tmp and /var are symlinks.
+dir="$(cd "$dir" && pwd -P)"
 
 # The session is keyed on the repo root, so any subdirectory of a repo
 # resolves to the same workspace. Outside a repo, the directory is its own root.

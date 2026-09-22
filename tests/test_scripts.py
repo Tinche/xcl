@@ -40,7 +40,9 @@ class ScriptTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='xcl-tests-')
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        # Resolved: on macOS the temp dir is under /var, a symlink to
+        # /private/var, and the scripts report physical paths.
+        self.root = Path(self.tmp.name).resolve()
         self.bin = self.root / 'bin'
         self.bin.mkdir()
         self.project = self.root / 'my project'
@@ -205,6 +207,16 @@ class ScriptTests(unittest.TestCase):
                         TEST_WINDOWS='claude:staging\nclaude:staging 2')
         call = self.tm_calls('new-window')[0]
         self.assertEqual(call[call.index('-n') + 1], 'claude:staging 3')
+
+    def test_symlinked_repo_root_is_not_tagged_as_subdirectory(self):
+        link = self.root / 'link'
+        link.symlink_to(self.project)
+        self.run_script('xcl-tab', 'claude', link, 'workspace')
+        call = self.tm_calls('new-window')[0]
+        self.assertEqual(call[call.index('-n') + 1], 'claude')
+        self.assertEqual(call[call.index('-c') + 1], str(self.project))
+        self.run_script('xcl', link)
+        self.assertEqual(self.calls('xcl-tab')[0][1:], [str(self.project), 'my project'])
 
     def test_shell_tab_uses_tmux_default_shell(self):
         self.run_script('xcl-tab', 'shell', self.project, 'workspace')

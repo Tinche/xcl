@@ -41,7 +41,10 @@ codex_args="${XCL_CODEX_ARGS---dangerously-bypass-approvals-and-sandbox}"
 lazygit_args="${XCL_LAZYGIT_ARGS-branch}"
 
 [ -d "$dir" ] || { echo "xcl-tab: not a directory: $dir" >&2; exit 1; }
-dir="$(cd "$dir" && pwd)"
+# Physical path (-P), to match the @xcl_root that xcl recorded from git;
+# otherwise a repo reached through a symlink would be tagged as its own
+# subdirectory.
+dir="$(cd "$dir" && pwd -P)"
 
 tm() { tmux -L "$socket" "$@"; }
 
