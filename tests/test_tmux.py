@@ -109,6 +109,38 @@ class TmuxTests(unittest.TestCase):
                 self.assertEqual(self.tm('show-options', '-wv', '-t', self.original,
                                          'automatic-rename'), 'off')
 
+    def test_theme_switch_recolors_running_server(self):
+        # XDG_CONFIG_HOME is the temp dir, so this is xcl-theme's default config.
+        conf_dir = self.root / 'xcl'
+        conf_dir.mkdir()
+        shutil.copy(REPO / 'tmux.conf', conf_dir)
+        shutil.copytree(REPO / 'themes', conf_dir / 'themes')
+
+        def theme(name):
+            result = subprocess.run([str(REPO / 'bin/xcl-theme'), 'set', name],
+                                    env=self.env, text=True, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+        def bar():
+            return (self.tm('show-options', '-gv', 'status-style'),
+                    self.tm('display-message', '-p', '#{E:status-left}'))
+
+        # With no theme file set, the config loads cleanly with its defaults.
+        self.tm('source-file', str(conf_dir / 'tmux.conf'))
+        mocha = ('bg=#181825,fg=#a6adc8', '#[bg=#585b70,fg=#cdd6f4,bold] test #[default]')
+        self.assertEqual(bar(), mocha)
+        theme('latte')
+        self.assertEqual(bar(), ('bg=#e6e9ef,fg=#6c6f85',
+                                 '#[bg=#acb0be,fg=#4c4f69,bold] test #[default]'))
+        theme('mocha')
+        self.assertEqual(bar(), mocha)
+        # An option a theme leaves out reverts to the default, rather than
+        # keeping the previous theme's value.
+        (conf_dir / 'themes/partial.conf').write_text('set -g @xcl_bar_bg "#000000"\n')
+        theme('latte')
+        theme('partial')
+        self.assertEqual(bar(), ('bg=#000000,fg=#a6adc8', mocha[1]))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -29,7 +29,7 @@ jobs:
         run: brew install tmux
       - name: Check shell syntax
         run: |
-          bash -n bin/xcl bin/xcl-tab bin/xcl-open
+          bash -n bin/xcl bin/xcl-tab bin/xcl-open bin/xcl-theme
           sh -n install.sh
       - name: Run tests
         run: python3 -m unittest discover -s tests -v

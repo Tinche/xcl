@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -26,6 +27,9 @@ if name == 'tmux':
         sessions = json.loads(os.environ.get('TEST_SESSIONS', '{}'))
         sys.exit(0 if args[-1].lstrip('=') in sessions else 1)
     if command == 'show-options':
+        if '-t' not in args:
+            print(os.environ.get('TEST_GLOBAL', ''))
+            sys.exit(0)
         sessions = json.loads(os.environ.get('TEST_SESSIONS', '{}'))
         target = args[args.index('-t') + 1].lstrip('=').rstrip(':')
         print(sessions.get(target, os.environ.get('TEST_ROOT', '')))
@@ -50,6 +54,9 @@ class ScriptTests(unittest.TestCase):
         self.log = self.root / 'calls.jsonl'
         self.conf = self.root / 'tmux.conf'
         self.conf.touch()
+        self.themes = self.root / 'themes'
+        shutil.copytree(REPO / 'themes', self.themes)
+        self.saved = self.root / 'theme'
         # Restrict PATH so installed agents/editors cannot affect the tests.
         for tool in ('bash', 'basename', 'tr', 'cut', 'sha256sum', 'shasum',
                      'cksum', 'grep', 'head', 'sed', 'git'):
@@ -64,6 +71,8 @@ class ScriptTests(unittest.TestCase):
         }
         self.stub('tmux')
         self.stub('xcl-tab')
+        # The real one: xcl asks it which theme file to use.
+        (self.bin / 'xcl-theme').symlink_to(REPO / 'bin' / 'xcl-theme')
 
     def stub(self, name):
         path = self.bin / name
@@ -239,6 +248,92 @@ class ScriptTests(unittest.TestCase):
         self.assertFalse(self.tm_calls('new-window'))
         self.run_script('xcl-tab', 'shell', self.project, code=1)
         self.assertFalse(self.tm_calls('new-window'))
+
+    def applied_theme(self):
+        """The theme file xcl or xcl-theme pointed the server at."""
+        calls = self.tm_calls('set-option')
+        call = next(c for c in calls if '@xcl_theme_file' in c)
+        # One invocation, so the reload sees the new option.
+        self.assertEqual(call[call.index('@xcl_theme_file') + 2:],
+                         [';', 'source-file', str(self.conf)])
+        return Path(call[call.index('@xcl_theme_file') + 1]).stem
+
+    def test_bundled_themes_set_the_whole_palette(self):
+        conf = (REPO / 'tmux.conf').read_text()
+        palette = set(re.findall(r'^set -g (@xcl_\w+) ', conf, re.M))
+        self.assertIn('@xcl_bar_bg', palette)
+        for theme in sorted((REPO / 'themes').glob('*.conf')):
+            with self.subTest(theme=theme.stem):
+                defined = re.findall(r'^set -g (@xcl_\w+) +"#[0-9a-f]{6}"$',
+                                     theme.read_text(), re.M)
+                self.assertEqual(sorted(defined), sorted(palette))
+        installed = re.search(r'^THEMES="(.*)"$', (REPO / 'install.sh').read_text(), re.M)
+        self.assertEqual(sorted(installed[1].split()),
+                         sorted(t.stem for t in (REPO / 'themes').glob('*.conf')))
+
+    def test_startup_applies_theme_for_new_and_existing_sessions(self):
+        for sessions in ({}, {'my project': str(self.project)}):
+            with self.subTest(existing=bool(sessions)):
+                self.run_script('xcl', TEST_SESSIONS=json.dumps(sessions))
+                self.assertEqual(self.applied_theme(), 'mocha')
+
+    def test_theme_precedence(self):
+        self.run_script('xcl', XCL_THEME='latte')
+        self.assertEqual(self.applied_theme(), 'latte')
+        self.saved.write_text('gruvbox\n')
+        self.run_script('xcl')
+        self.assertEqual(self.applied_theme(), 'gruvbox')
+        self.run_script('xcl', XCL_THEME='latte')
+        self.assertEqual(self.applied_theme(), 'latte')
+        # A saved theme that has since been deleted falls back, with a warning.
+        self.saved.write_text('deleted\n')
+        result = self.run_script('xcl')
+        self.assertEqual(self.applied_theme(), 'mocha')
+        self.assertIn("saved theme 'deleted' not found", result.stderr)
+
+    def test_unknown_theme_fails_before_any_session(self):
+        for name in ('nope', '../themes/mocha'):
+            with self.subTest(name=name):
+                result = self.run_script('xcl', code=1, XCL_THEME=name)
+                self.assertIn('no theme', result.stderr)
+                self.assertFalse(self.calls('tmux'))
+
+    def test_theme_set_switches_server_and_remembers(self):
+        result = self.run_script('xcl-theme', 'set', 'latte')
+        self.assertEqual(self.applied_theme(), 'latte')
+        self.assertEqual(self.saved.read_text(), 'latte\n')
+        self.assertNotIn('applies the next time', result.stdout)
+        self.assertEqual(self.run_script('xcl-theme').stdout,
+                         '  gruvbox\n* latte\n  mocha\n')
+        self.assertEqual(self.run_script('xcl-theme', 'path').stdout.strip(),
+                         str(self.themes / 'latte.conf'))
+        for args in (['set', 'nope'], ['set', '../x']):
+            with self.subTest(args=args):
+                self.run_script('xcl-theme', *args, code=1)
+                self.assertFalse(self.calls('tmux'))
+                self.assertEqual(self.saved.read_text(), 'latte\n')
+        self.run_script('xcl-theme', 'set', code=2)
+        self.run_script('xcl-theme', 'bogus', code=2)
+
+    def test_theme_set_without_server_still_remembers(self):
+        (self.bin / 'tmux').unlink()
+        (self.bin / 'tmux').symlink_to(shutil.which('false'))
+        result = self.run_script('xcl-theme', 'set', 'gruvbox')
+        self.assertIn('applies the next time', result.stdout)
+        self.assertEqual(self.saved.read_text(), 'gruvbox\n')
+
+    def test_theme_menu_lists_themes_and_marks_the_shown_one(self):
+        (self.themes / 'bad name.conf').touch()
+        self.run_script('xcl-theme', 'menu', '/dev/ttys001',
+                        TEST_GLOBAL=str(self.themes / 'latte.conf'))
+        call = self.tm_calls('display-menu')[0]
+        self.assertEqual(call[call.index('-c') + 1], '/dev/ttys001')
+        items = call[call.index('-c') + 2:]
+        self.assertEqual([items[i:i + 3] for i in range(0, len(items), 3)], [
+            ['  gruvbox', '1', "run-shell -b 'xcl-theme set gruvbox'"],
+            ['* latte', '2', "run-shell -b 'xcl-theme set latte'"],
+            ['  mocha', '3', "run-shell -b 'xcl-theme set mocha'"],
+        ])
 
     def test_editor_override_preserves_arguments_and_directory(self):
         self.stub('my-editor')

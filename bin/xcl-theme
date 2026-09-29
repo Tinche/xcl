@@ -1,0 +1,115 @@
+#!/usr/bin/env bash
+# xcl-theme — pick the colors of xcl's tab bar.
+#
+#   xcl-theme                list themes; * marks the one in effect
+#   xcl-theme set <name>     switch the running server and remember it
+#   xcl-theme path           print the theme file in effect (used by xcl)
+#   xcl-theme menu [client]  pop up a picker (bound to prefix T)
+#
+# Themes are the *.conf files in themes/ next to xcl's tmux.conf. The one in
+# effect is $XCL_THEME if set, otherwise the last one picked with `set`,
+# otherwise mocha.
+set -euo pipefail
+
+socket="${XCL_SOCKET:-xcl}"
+conf="${XCL_CONF:-${XDG_CONFIG_HOME:-$HOME/.config}/xcl/tmux.conf}"
+conf_dir="${conf%/*}"
+themes="$conf_dir/themes"
+saved="$conf_dir/theme"
+default=mocha
+
+tm() { tmux -L "$socket" "$@"; }
+
+die() { echo "xcl-theme: $*" >&2; exit 1; }
+
+# Names are spliced into tmux commands and menu labels, so keep them to
+# characters that need no quoting there.
+valid() { [[ "$1" =~ ^[A-Za-z0-9_-]+$ ]]; }
+
+names() {
+  local f
+  for f in "$themes"/*.conf; do
+    [ -f "$f" ] || continue
+    f="${f##*/}"
+    printf '%s\n' "${f%.conf}"
+  done
+}
+
+# The name of the theme in effect. An explicit XCL_THEME must exist; a saved
+# choice whose file has since been removed falls back to the default.
+current() {
+  if [ -n "${XCL_THEME:-}" ]; then
+    valid "$XCL_THEME" && [ -f "$themes/$XCL_THEME.conf" ] ||
+      die "no theme '$XCL_THEME' in $themes"
+    printf '%s\n' "$XCL_THEME"
+    return
+  fi
+  local name=""
+  [ -f "$saved" ] && IFS= read -r name < "$saved" || true
+  if [ -n "$name" ]; then
+    if valid "$name" && [ -f "$themes/$name.conf" ]; then
+      printf '%s\n' "$name"
+      return
+    fi
+    echo "xcl-theme: saved theme '$name' not found; using $default" >&2
+  fi
+  [ -f "$themes/$default.conf" ] || die "no theme '$default' in $themes"
+  printf '%s\n' "$default"
+}
+
+case "${1:-list}" in
+  list)
+    cur="$(current)"
+    while IFS= read -r name; do
+      if [ "$name" = "$cur" ]; then echo "* $name"; else echo "  $name"; fi
+    done < <(names)
+    ;;
+  path)
+    # Not inlined into echo: a failing $(...) in an argument is ignored.
+    cur="$(current)"
+    echo "$themes/$cur.conf"
+    ;;
+  set)
+    [ "$#" -eq 2 ] || { echo "usage: xcl-theme set <name>" >&2; exit 2; }
+    name="$2"
+    valid "$name" && [ -f "$themes/$name.conf" ] || die "no theme '$name' in $themes"
+    printf '%s\n' "$name" > "$saved"
+    # Re-sourcing the whole config, not just the theme, resets any palette
+    # option the theme leaves out, and re-bakes the style options.
+    if tm set-option -g @xcl_theme_file "$themes/$name.conf" \; \
+          source-file "$conf" 2>/dev/null; then
+      tm display-message "xcl theme: $name" 2>/dev/null || true
+    else
+      echo "xcl-theme: saved '$name'; it applies the next time xcl runs"
+    fi
+    ;;
+  menu)
+    client="${2:-}"
+    # Mark what the server is showing, which may differ from what a fresh
+    # xcl would pick (XCL_THEME set in one shell only).
+    shown="$(tm show-options -gqv @xcl_theme_file 2>/dev/null || true)"
+    shown="${shown##*/}"
+    shown="${shown%.conf}"
+    args=(display-menu -T "#[align=centre] theme ")
+    [ -n "$client" ] && args+=(-c "$client")
+    n=0
+    while IFS= read -r name; do
+      valid "$name" || continue
+      n=$((n + 1))
+      key=""
+      [ "$n" -le 9 ] && key="$n"
+      label="  $name"
+      [ "$name" = "$shown" ] && label="* $name"
+      args+=("$label" "$key" "run-shell -b 'xcl-theme set $name'")
+    done < <(names)
+    [ "$n" -gt 0 ] || die "no themes in $themes"
+    exec tmux -L "$socket" "${args[@]}"
+    ;;
+  -h|--help)
+    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    echo "usage: xcl-theme [list|set <name>|path|menu [client]]" >&2
+    exit 2
+    ;;
+esac
