@@ -10,7 +10,8 @@
 # than starting a new one.
 #
 # Inside: prefix-c Claude, prefix-r resume, prefix-C Codex, prefix-R resume,
-# prefix-S shell, prefix-g lazygit, prefix-z editor, prefix-s switch repo.
+# prefix-S shell, prefix-g lazygit, prefix-z editor, prefix-s switch repo,
+# prefix-T theme. XCL_THEME=<name> overrides the theme for this run.
 set -euo pipefail
 
 socket="${XCL_SOCKET:-xcl}"
@@ -20,7 +21,7 @@ resume=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -r|--resume) resume=1; shift ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --) shift; break ;;
     -*) echo "xcl: unknown option: $1" >&2; exit 2 ;;
     *) break ;;
@@ -34,6 +35,10 @@ command -v tmux >/dev/null 2>&1 || { echo "xcl: tmux is not installed" >&2; exit
 # every tab-opening key would silently do nothing.
 command -v xcl-tab >/dev/null 2>&1 || {
   echo "xcl: xcl-tab not found on PATH (install dir not in PATH?)" >&2; exit 1; }
+command -v xcl-theme >/dev/null 2>&1 || {
+  echo "xcl: xcl-theme not found on PATH (install dir not in PATH?)" >&2; exit 1; }
+# Resolved up front, so a bad XCL_THEME fails before any session exists.
+theme_file="$(XCL_CONF="$conf" xcl-theme path)"
 
 dir="${1:-$PWD}"
 [ -d "$dir" ] || { echo "xcl: not a directory: $dir" >&2; exit 1; }
@@ -96,6 +101,11 @@ if ! tm has-session -t "=$name" 2>/dev/null; then
   XCL_SOCKET="$socket" xcl-tab "$agent" "$dir" "$name"
   tm kill-window -t "=$name:__bootstrap"
 fi
+
+# On every run, not just new sessions, so `XCL_THEME=<name> xcl` also
+# recolors a server that is already running. The config reads the theme
+# through @xcl_theme_file, so re-sourcing it applies the theme.
+tm set-option -g @xcl_theme_file "$theme_file" \; source-file "$conf"
 
 if [ -n "${TMUX-}" ]; then
   # Inside tmux already. If it's this server, hop to the target session;

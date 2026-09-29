@@ -8,7 +8,7 @@
 #
 # Environment:
 #   XCL_BIN_DIR    where the executables go   (default ~/.local/bin)
-#   XCL_CONF_DIR   where tmux.conf goes       (default ~/.config/xcl)
+#   XCL_CONF_DIR   where tmux.conf and themes/ go (default ~/.config/xcl)
 #   XCL_REPO       owner/name                 (default Tinche/xcl)
 #   XCL_REF        branch or tag              (default main)
 set -eu
@@ -51,7 +51,13 @@ get() { # get <repo-relative-path>
   fi
 }
 
-for f in bin/xcl bin/xcl-tab bin/xcl-open tmux.conf; do
+# Listed by hand: under `curl | sh` there is no directory to list.
+THEMES="mocha latte gruvbox"
+
+files="bin/xcl bin/xcl-tab bin/xcl-open bin/xcl-theme tmux.conf"
+for t in $THEMES; do files="$files themes/$t.conf"; done
+
+for f in $files; do
   mkdir -p "$tmp/$(dirname "$f")"
   get "$f" > "$tmp/$f" || die "could not obtain $f"
   [ -s "$tmp/$f" ] || die "$f came back empty (bad ref '$REF'?)"
@@ -59,23 +65,32 @@ done
 
 # A 404 from raw.githubusercontent.com is an HTML page, not a script. Catch
 # that before installing something unrunnable.
-for f in bin/xcl bin/xcl-tab bin/xcl-open; do
+for f in bin/xcl bin/xcl-tab bin/xcl-open bin/xcl-theme; do
   head -n 1 "$tmp/$f" | grep -q '^#!' || die "$f does not look like a script"
 done
 head -n 1 "$tmp/tmux.conf" | grep -q '^#' || die "tmux.conf does not look like a config"
+for t in $THEMES; do
+  head -n 1 "$tmp/themes/$t.conf" | grep -q '^#' || die "themes/$t.conf does not look like a theme"
+done
 
-mkdir -p "$BIN_DIR" "$CONF_DIR"
-for f in xcl xcl-tab xcl-open; do
+mkdir -p "$BIN_DIR" "$CONF_DIR/themes"
+for f in xcl xcl-tab xcl-open xcl-theme; do
   cp "$tmp/bin/$f" "$BIN_DIR/$f"
   chmod 755 "$BIN_DIR/$f"
 done
 cp "$tmp/tmux.conf" "$CONF_DIR/tmux.conf"
+# Only the bundled themes are overwritten; your own files in themes/ stay.
+for t in $THEMES; do
+  cp "$tmp/themes/$t.conf" "$CONF_DIR/themes/$t.conf"
+done
 
 say "installed:"
 say "  $BIN_DIR/xcl"
 say "  $BIN_DIR/xcl-tab"
 say "  $BIN_DIR/xcl-open"
+say "  $BIN_DIR/xcl-theme"
 say "  $CONF_DIR/tmux.conf"
+say "  $CONF_DIR/themes/ ($THEMES)"
 
 # ---- post-install checks -------------------------------------------------
 command -v tmux >/dev/null 2>&1 || warn "tmux is not installed — xcl needs it"
@@ -93,4 +108,4 @@ done
 
 say ""
 say "run:  xcl            (from inside a repo)"
-say "then: prefix-c new Claude tab, prefix-s switch repo, prefix-M-r reload config"
+say "then: prefix-c new Claude tab, prefix-s switch repo, prefix-T theme, prefix-M-r reload config"
