@@ -61,7 +61,7 @@ case "$agent" in
   codex)         base="cx"     ;;
   codex-resume)  base="cx$resume_mark" ;;
   shell)         base="sh"     ;;
-  lazygit)       base="git"; singleton=1 ;;
+  lazygit)       base="lazygit"; singleton=1 ;;
   *) echo "xcl-tab: unknown agent '$agent'" \
           "(claude|claude-resume|codex|codex-resume|shell|lazygit)" >&2; exit 2 ;;
 esac
@@ -74,9 +74,17 @@ if [ "$singleton" = 1 ]; then
   # Already open? Switch to it. Matched by index rather than by name so
   # labels containing spaces can't break the target.
   idx="$(tm list-windows -t "=$session" -F '#{window_index}' \
-           -f "#{==:#{window_name},$base}" 2>/dev/null | head -1)"
+           -f "#{||:#{==:#{window_name},$base},#{==:#{window_name},git}}" 2>/dev/null | head -1)"
   if [ -n "$idx" ]; then
-    exec tmux -L "$socket" select-window -t "=$session:$idx"
+    # Also migrate a git tab opened before it had its own reserved slot.
+    tm set-option -t "=$session:" base-index 0
+    if [ "$idx" != 0 ]; then
+      tm move-window -s "=$session:$idx" -t "=$session:0"
+    fi
+    tm rename-window -t "=$session:0" "$base" \; \
+      set-option -F -t "=$session:0" @xcl_git '#{window_id}' \; \
+      move-window -r -t "=$session:"
+    exec tmux -L "$socket" select-window -t "=$session:0"
   fi
   # It operates on the whole repo, so open it at the root regardless of
   # which tab it was launched from, and never subdirectory-tag it.
@@ -147,6 +155,14 @@ if [ -n "$placeholder" ]; then
     set-option -w @xcl_placeholder "$placeholder" \; \
     set-option -w automatic-rename-format '#{?pane_title,#{?#{m/r:#{@xcl_placeholder},#{pane_title}},#{@xcl_label},#{s/^(✳ |◐ |◑ )//;=/40/…:pane_title}},#{@xcl_label}}' \; \
     set-option -w automatic-rename on
+fi
+
+if [ "$singleton" = 1 ]; then
+  # Index 0 sorts before normal tabs. Starting renumbering there keeps git
+  # at 0 and the other tabs at 1, 2, ... when any normal tab closes.
+  exec tmux -L "$socket" new-window -t "=$session:0" -c "$dir" -n "$label" "$cmd" \; \
+    set-option -t "=$session:" base-index 0 \; \
+    set-option -F -t "=$session:0" @xcl_git '#{window_id}'
 fi
 
 if [ -n "$cmd" ]; then

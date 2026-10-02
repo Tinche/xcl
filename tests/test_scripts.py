@@ -199,7 +199,6 @@ class ScriptTests(unittest.TestCase):
                 self.run_script('xcl-tab', agent, self.project, 'workspace')
                 call = self.tm_calls('new-window')[0]
                 self.assertNotIn('automatic-rename', call)
-                self.assertNotIn(';', call)
 
     def test_empty_args_override_and_custom_binary(self):
         self.run_script('xcl-tab', 'codex', self.project, 'workspace',
@@ -236,12 +235,15 @@ class ScriptTests(unittest.TestCase):
         child = self.project / 'nested'
         child.mkdir()
         self.run_script('xcl-tab', 'lazygit', child, 'workspace', TEST_INDEX='3')
-        self.assertEqual(self.tm_calls('select-window'), [['select-window', '-t', '=workspace:3']])
+        self.assertEqual(self.tm_calls('select-window'), [['select-window', '-t', '=workspace:0']])
+        self.assertEqual(self.tm_calls('move-window')[0],
+                         ['move-window', '-s', '=workspace:3', '-t', '=workspace:0'])
         self.assertFalse(self.tm_calls('new-window'))
         self.run_script('xcl-tab', 'lazygit', child, 'workspace')
         call = self.tm_calls('new-window')[0]
         self.assertEqual(call[call.index('-c') + 1], str(self.project))
-        self.assertEqual(call[call.index('-n') + 1], 'git')
+        self.assertEqual(call[call.index('-n') + 1], 'lazygit')
+        self.assertEqual(call[call.index('-t') + 1], '=workspace:0')
 
     def test_tab_rejects_unknown_agent_and_missing_session(self):
         self.run_script('xcl-tab', 'unknown', self.project, 'workspace', code=2)
