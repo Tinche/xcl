@@ -10,7 +10,7 @@
 # than starting a new one.
 #
 # Inside: prefix-c Claude, prefix-r resume, prefix-C Codex, prefix-R resume,
-# prefix-S shell, prefix-g lazygit, prefix-z editor, prefix-s switch repo,
+# prefix-S shell, Alt-g lazygit, prefix-z editor, prefix-s switch repo,
 # prefix-T theme. XCL_THEME=<name> overrides the theme for this run.
 set -euo pipefail
 

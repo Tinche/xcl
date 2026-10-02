@@ -1,4 +1,4 @@
-"""Integration coverage for title handling using an isolated tmux server."""
+"""Integration coverage using an isolated tmux server."""
 import os
 from pathlib import Path
 import shutil
@@ -35,6 +35,78 @@ class TmuxTests(unittest.TestCase):
         fake.chmod(0o755)
         self.env['XCL_CLAUDE_BIN'] = str(fake)
         self.env['XCL_CODEX_BIN'] = str(fake)
+        self.env['XCL_LAZYGIT_BIN'] = str(fake)
+
+    def open_tab(self, agent):
+        result = subprocess.run([str(REPO / 'bin/xcl-tab'), agent, str(self.root), 'test'],
+                                env=self.env, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return self.tm('display-message', '-p', '-t', '=test:', '#{window_id}')
+
+    def windows(self):
+        return self.tm('list-windows', '-t', '=test', '-F', '#{window_index}:#{window_name}')
+
+    def wait_windows(self, expected):
+        deadline = time.monotonic() + 5
+        while self.windows() != expected:
+            self.assertLess(time.monotonic(), deadline, 'Window numbering was not restored')
+            time.sleep(0.05)
+
+    def test_git_stays_leftmost_without_consuming_number_keys(self):
+        shell = self.open_tab('shell')
+        git = self.open_tab('lazygit')
+        self.assertEqual(self.windows(), '0:lazygit\n1:original\n2:sh')
+        self.assertEqual(self.tm('display-message', '-p', '-t', git,
+                                 '#{E:window-status-format}'), 'lazygit')
+        current = self.tm('display-message', '-p', '-t', git,
+                          '#{E:window-status-current-format}')
+        self.assertTrue(current.endswith(' lazygit'), current)
+        self.tm('select-window', '-t', '=test:1')
+        self.assertEqual(self.open_tab('lazygit'), git)
+        self.assertEqual(self.windows(), '0:lazygit\n1:original\n2:sh')
+        self.tm('kill-window', '-t', self.original)
+        self.assertEqual(self.windows(), '0:lazygit\n1:sh')
+        self.tm('source-file', str(REPO / 'tmux.conf'))
+        self.open_tab('shell')
+        self.assertEqual(self.windows(), '0:lazygit\n1:sh\n2:sh 2')
+        self.assertEqual(self.tm('display-message', '-p', '-t', shell,
+                                 '#{E:window-status-format}'), '1 sh')
+        self.tm('kill-window', '-t', git)
+        self.wait_windows('1:sh\n2:sh 2')
+        self.open_tab('lazygit')
+        self.assertEqual(self.windows(), '0:lazygit\n1:sh\n2:sh 2')
+
+    def test_alt_g_binding_replaces_prefix_g_on_reload(self):
+        self.tm('bind-key', 'g', 'display-message', 'old binding')
+        self.tm('source-file', str(REPO / 'tmux.conf'))
+        root = self.tm('list-keys', '-T', 'root').splitlines()
+        binding = next(line for line in root if line.split()[3] == 'M-g')
+        self.assertIn('xcl-tab lazygit', binding)
+        prefix = self.tm('list-keys', '-T', 'prefix').splitlines()
+        self.assertFalse(any(line.split()[3] in ('g', '0') for line in prefix))
+
+    def test_existing_git_tab_is_moved_and_other_sessions_are_unchanged(self):
+        self.tm('new-window', '-t', '=test:', '-n', 'git')
+        git = self.tm('display-message', '-p', '-t', '=test:', '#{window_id}')
+        self.open_tab('shell')
+        self.tm('new-session', '-d', '-s', 'other', '-n', 'other')
+        self.assertEqual(self.open_tab('lazygit'), git)
+        self.assertEqual(self.windows(), '0:lazygit\n1:original\n2:sh')
+        self.assertEqual(self.tm('show-options', '-Av', '-t', '=other:', 'base-index'), '1')
+        self.tm('select-window', '-t', '=other:1')
+        self.tm('kill-window', '-t', git)
+        self.wait_windows('1:original\n2:sh')
+        self.assertEqual(self.tm('list-windows', '-t', '=other', '-F', '#{window_index}'), '1')
+
+    def test_git_exiting_restores_numbering_and_git_can_be_the_only_tab(self):
+        git = self.open_tab('lazygit')
+        self.tm('kill-window', '-t', self.original)
+        self.assertEqual(self.windows(), '0:lazygit')
+        self.open_tab('shell')
+        self.assertEqual(self.windows(), '0:lazygit\n1:sh')
+        # Exit the stand-in process naturally, as when quitting lazygit.
+        self.tm('send-keys', '-t', git, 'C-d')
+        self.wait_windows('1:sh')
 
     def tm(self, *args):
         result = subprocess.run([TMUX, '-L', self.socket, *args], env=self.env,

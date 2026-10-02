@@ -48,7 +48,7 @@ to it as usual. `--resume` also works.
 | `prefix C` | new Codex tab |
 | `prefix R` | new Codex tab, resume a past session |
 | `prefix S` | new shell tab |
-| `prefix g` | lazygit — one per repo, at the repo root |
+| `Alt-g` | open or switch to lazygit — the leftmost, unnumbered tab |
 | `prefix z` | open the repo in your editor |
 | `prefix s` | switch repo |
 | `prefix T` | switch theme |
@@ -58,8 +58,12 @@ to it as usual. `--resume` also works.
 | `Alt-t` / `Alt-w` | new tab / close tab |
 
 Tabs are named after what they run: `claude`, `claude 2`, `claude↻` for a
-resumed one, `cx` for Codex, `sh`, `git`. A tab opened outside the repo root
+resumed one, `cx` for Codex, `sh`, `lazygit`. A tab opened outside the repo root
 is tagged with its subdirectory, like `claude:staging`.
+
+The `lazygit` tab is a singleton per repo and always runs at the repo root.
+It stays to the left of the numbered tabs, labelled `lazygit`; opening it
+doesn't consume a number key. Normal tabs still start at 1.
 
 Agent tabs keep that label until the conversation has a title, then follow
 it. Long titles are shortened to 40 characters plus an ellipsis. This also
